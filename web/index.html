@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Greedy CPU Scheduling Lab — who gets the CPU next?</title>
+    <meta name="description" content="A C++ CPU scheduling engine (FCFS, SJF, SRT, Round Robin, Priority, HRRN, Feedback) compiled to WebAssembly. Watch every scheduling decision tick by tick, compare algorithms, and benchmark them on thousands of workloads." />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="wrap topbar-inner">
+        <a href="#top" class="brand" aria-label="Greedy CPU Scheduling Lab — home">
+          <img src="./favicon.svg" alt="" width="28" height="28" />
+          <span>Greedy CPU Scheduling <em>Lab</em></span>
+        </a>
+        <nav class="nav" aria-label="Sections">
+          <a href="#simulator">Simulator</a>
+          <a href="#compare">Compare</a>
+          <a href="#benchmark">Benchmark</a>
+          <a href="#how">How it’s built</a>
+        </nav>
+        <span class="engine-status" id="engine-status" role="status"><span class="dot"></span>Loading engine…</span>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- Hero: the motto -->
+      <section class="hero">
+        <div class="wrap hero-grid">
+          <div class="hero-copy">
+            <p class="kicker">Operating systems · Greedy algorithms · C++ → WebAssembly</p>
+            <h1>Who gets the CPU <span class="next">next?</span></h1>
+            <p class="lede">
+              Hundreds of times a second, an operating system makes one <strong>greedy choice</strong>: which ready process runs now.
+              This lab implements ten scheduling strategies in modern C++, runs that same engine in your browser, and shows
+              <strong>every decision, tick by tick</strong>, along with what each one costs in waiting time, responsiveness and fairness.
+            </p>
+            <div class="hero-actions">
+              <a href="#simulator" class="btn btn-primary">Run the simulator</a>
+              <a href="#demonstrates" class="btn btn-ghost">What this project shows</a>
+            </div>
+          </div>
+          <figure class="hero-demo" aria-label="Live demo: Shortest Remaining Time scheduling a sample workload">
+            <figcaption>
+              <span class="mono">live · <span id="hero-alg">SRT</span></span>
+              <span class="mono" id="hero-clock">t = 00</span>
+            </figcaption>
+            <div id="hero-gantt" class="gantt-host"></div>
+            <p class="hero-why mono" id="hero-why">Booting the C++ engine…</p>
+          </figure>
+        </div>
+        <div class="wrap">
+          <dl class="stats" id="hero-stats">
+            <div><dt>Algorithms</dt><dd id="stat-algorithms">10</dd></div>
+            <div><dt>Automated checks</dt><dd>53 <small>incl. 22 original lab cases</small></dd></div>
+            <div><dt>Less waiting than FCFS</dt><dd id="stat-reduction">—</dd><small id="stat-reduction-note">best algorithm · 1,000 random workloads</small></div>
+            <div><dt>Servers needed</dt><dd>0 <small>runs locally via WASM</small></dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <!-- Concepts -->
+      <section class="section concepts" aria-labelledby="concepts-title">
+        <div class="wrap">
+          <header class="section-head">
+            <span class="section-no">§1</span>
+            <h2 id="concepts-title">What a scheduler is judged on</h2>
+            <p>There is no single best algorithm, only trade-offs between these numbers. Every view below measures all of them.</p>
+          </header>
+          <div class="concept-grid">
+            <article><h3>Waiting time</h3><p>Time spent ready but not running. The classic target — <em>shortest-job</em> strategies minimise it.</p><code>turnaround − burst</code></article>
+            <article><h3>Turnaround</h3><p>Arrival to completion. What a batch user experiences end-to-end.</p><code>finish − arrival</code></article>
+            <article><h3>Response time</h3><p>Arrival to first run. What makes an interactive system feel fast — <em>Round Robin</em> and <em>Feedback</em> excel.</p><code>first run − arrival</code></article>
+            <article><h3>Fairness</h3><p>Jain’s index over normalised turnaround. 1.0 means every process was slowed down equally.</p><code>(Σx)² / (n·Σx²)</code></article>
+          </div>
+        </div>
+      </section>
+
+      <!-- Simulator -->
+      <section class="section" id="simulator" aria-labelledby="sim-title">
+        <div class="wrap">
+          <header class="section-head">
+            <span class="section-no">§2</span>
+            <h2 id="sim-title">Simulator</h2>
+            <p>Build a workload, pick an algorithm, and step through the schedule. The <strong>why</strong> line is the engine’s own justification for each dispatch.</p>
+          </header>
+
+          <div class="sim-grid">
+            <aside class="panel workload-panel" aria-label="Workload">
+              <div class="panel-head">
+                <h3>Workload</h3>
+                <select id="preset" class="select" aria-label="Load a preset workload"></select>
+              </div>
+              <table class="proc-table">
+                <thead><tr><th></th><th>Process</th><th>Arrival</th><th>Burst</th><th title="Higher = more important (Priority algorithms)">Priority</th><th></th></tr></thead>
+                <tbody id="proc-rows"></tbody>
+              </table>
+              <div class="row-actions">
+                <button class="btn btn-small" id="add-proc" type="button">+ Add process</button>
+                <button class="btn btn-small btn-ghost" id="random-proc" type="button">Randomise</button>
+              </div>
+              <p class="form-error" id="workload-error" role="alert"></p>
+
+              <div class="panel-head spaced"><h3>Algorithm</h3></div>
+              <div class="alg-picker" id="alg-picker" role="radiogroup" aria-label="Scheduling algorithm"></div>
+              <label class="param-field" id="param-field" hidden>
+                <span id="param-label">Quantum</span>
+                <input type="number" id="param-input" min="1" max="20" class="input" />
+              </label>
+              <div class="alg-card" id="alg-card"></div>
+            </aside>
+
+            <div class="sim-main">
+              <div class="panel stage-panel">
+                <div class="stage-top">
+                  <div class="clock mono"><span id="clock-t">t = 00</span><small id="clock-span">/ 00</small></div>
+                  <p class="tick-events mono" id="tick-events" aria-live="polite"></p>
+                </div>
+                <div class="stage" id="stage">
+                  <div class="lane lane-incoming"><span class="lane-label">Incoming</span></div>
+                  <div class="lane lane-ready"><span class="lane-label">Ready queue</span></div>
+                  <div class="cpu" aria-hidden="true">
+                    <span class="cpu-label mono">CPU 0</span>
+                    <span class="cpu-pins top"></span><span class="cpu-pins bottom"></span>
+                    <span class="cpu-pins left"></span><span class="cpu-pins right"></span>
+                    <span class="cpu-core"></span>
+                  </div>
+                  <div class="lane lane-done"><span class="lane-label">Done</span></div>
+                  <div id="tokens"></div>
+                </div>
+                <div class="why" id="why" aria-live="polite"></div>
+              </div>
+
+              <div class="panel gantt-panel">
+                <div class="controls" role="group" aria-label="Playback controls">
+                  <button class="icon-btn" id="ctl-reset" type="button" aria-label="Back to start" title="Back to start (Home)">⏮</button>
+                  <button class="icon-btn" id="ctl-back" type="button" aria-label="Previous tick" title="Previous tick (←)">◀</button>
+                  <button class="icon-btn play" id="ctl-play" type="button" aria-label="Play" title="Play / pause (Space)">▶</button>
+                  <button class="icon-btn" id="ctl-step" type="button" aria-label="Next tick" title="Next tick (→)">▶︎|</button>
+                  <input type="range" id="ctl-scrub" min="0" max="10" value="0" aria-label="Timeline position" />
+                  <select id="ctl-speed" class="select select-small" aria-label="Playback speed">
+                    <option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
+                  </select>
+                </div>
+                <div id="sim-gantt" class="gantt-host"></div>
+                <div class="legend mono"><span><i class="sw run"></i>running</span><span><i class="sw wait"></i>waiting in ready queue</span><span><i class="sw arr"></i>arrival</span></div>
+              </div>
+
+              <div class="panel">
+                <div class="panel-head"><h3>Results</h3><span class="muted mono" id="result-note"></span></div>
+                <div class="summary" id="summary"></div>
+                <div class="table-scroll">
+                  <table class="data-table" id="metrics-table"></table>
+                </div>
+              </div>
+
+              <details class="panel decisions-panel">
+                <summary><h3>Decision log</h3><span class="muted">every dispatch and the greedy rule behind it</span></summary>
+                <ol class="decisions mono" id="decisions"></ol>
+              </details>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Compare -->
+      <section class="section" id="compare" aria-labelledby="compare-title">
+        <div class="wrap">
+          <header class="section-head">
+            <span class="section-no">§3</span>
+            <h2 id="compare-title">Compare every algorithm on your workload</h2>
+            <p>Same processes, ten strategies. Best value in each column is highlighted; click a row to open it in the simulator.</p>
+          </header>
+          <p class="insight" id="compare-insight"></p>
+          <div class="panel table-scroll">
+            <table class="data-table compare-table" id="compare-table"></table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Benchmark -->
+      <section class="section" id="benchmark" aria-labelledby="bench-title">
+        <div class="wrap">
+          <header class="section-head">
+            <span class="section-no">§4</span>
+            <h2 id="bench-title">Benchmark lab</h2>
+            <p>One workload proves nothing. Generate hundreds of random workloads (seeded, so results are reproducible) and see how each algorithm behaves on average.</p>
+          </header>
+          <form class="bench-controls panel" id="bench-form">
+            <label>Workload profile
+              <select class="select" id="bench-profile">
+                <option value="mixed">Mixed (short + long jobs)</option>
+                <option value="interactive">Interactive (many short bursts)</option>
+                <option value="cpu-bound">CPU-bound (long bursts)</option>
+                <option value="convoy">Convoy (long job first)</option>
+              </select>
+            </label>
+            <label>Workloads
+              <select class="select" id="bench-runs">
+                <option value="200">200</option><option value="1000" selected>1,000</option><option value="3000">3,000</option>
+              </select>
+            </label>
+            <label>Seed <input class="input" id="bench-seed" type="number" value="42" min="0" max="999999" /></label>
+            <button class="btn btn-primary" type="submit" id="bench-run">Run benchmark</button>
+            <span class="muted mono" id="bench-time"></span>
+          </form>
+          <div class="bench-grid">
+            <div class="panel">
+              <h3 class="chart-title">Average waiting time vs FCFS</h3>
+              <p class="muted small">Bars right of zero wait less than First Come, First Served.</p>
+              <div id="bench-chart" class="bench-chart"></div>
+            </div>
+            <div class="panel">
+              <h3 class="chart-title">Findings</h3>
+              <ul class="findings" id="bench-findings"></ul>
+            </div>
+          </div>
+          <div class="panel table-scroll">
+            <table class="data-table" id="bench-table"></table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Demonstrates -->
+      <section class="section demonstrates" id="demonstrates" aria-labelledby="demo-title">
+        <div class="wrap">
+          <header class="section-head">
+            <span class="section-no">§5</span>
+            <h2 id="demo-title">What this project demonstrates</h2>
+            <p>Each claim, and where on this page you can verify it.</p>
+          </header>
+          <div class="claim-grid">
+            <article class="claim">
+              <span class="claim-no mono">01</span>
+              <h3>Scheduling engine</h3>
+              <p>A CPU scheduling simulator implementing <strong>FCFS, SJF (Shortest Process Next), Shortest Remaining Time, Priority (non-preemptive &amp; preemptive), Round Robin</strong>, HRRN, multilevel Feedback and Aging — modelling how an OS executes processes.</p>
+              <a href="#simulator">Try every algorithm →</a>
+            </article>
+            <article class="claim">
+              <span class="claim-no mono">02</span>
+              <h3>Interactive visualization</h3>
+              <p>Animated CPU stage and <strong>Gantt chart timelines</strong> with tick-by-tick playback, plus a side-by-side <strong>comparative analysis</strong> of all strategies on the same workload.</p>
+              <a href="#compare">Open the comparison →</a>
+            </article>
+            <article class="claim">
+              <span class="claim-no mono">03</span>
+              <h3>Performance benchmarking</h3>
+              <p>Waiting, turnaround and response time, CPU utilisation, context switches and fairness across thousands of seeded workloads — <strong id="claim-reduction">up to ~30% less average waiting than FCFS</strong>.</p>
+              <a href="#benchmark">Reproduce the numbers →</a>
+            </article>
+            <article class="claim">
+              <span class="claim-no mono">04</span>
+              <h3>Modular implementation</h3>
+              <p>Each algorithm is one class behind a <code>Scheduler</code> interface, registered in an <strong>STL <code>unordered_map</code></strong>; ready queues use <strong>STL <code>queue</code></strong> (Round Robin) and <strong><code>priority_queue</code> heaps</strong> (SJF, SRT, Feedback). Adding an algorithm is one class and one line.</p>
+              <a href="#how">See the architecture →</a>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- How it's built -->
+      <section class="section" id="how" aria-labelledby="how-title">
+        <div class="wrap">
+          <header class="section-head">
+            <span class="section-no">§6</span>
+            <h2 id="how-title">How it’s built</h2>
+            <p>One C++17 engine, three front doors: the original command-line lab, a JSON/benchmark CLI, and this page via WebAssembly.</p>
+          </header>
+          <div class="arch">
+            <div class="arch-col">
+              <span class="arch-tag mono">input</span>
+              <div class="arch-box">Workload<small>text file · this UI · random generator</small></div>
+            </div>
+            <span class="arch-arrow" aria-hidden="true"></span>
+            <div class="arch-col">
+              <span class="arch-tag mono">core · C++17</span>
+              <div class="arch-box strong">AlgorithmRegistry<small>unordered_map&lt;id, unique_ptr&lt;Scheduler&gt;&gt;</small></div>
+              <div class="arch-box">Scheduler::schedule(ctx)<small>10 greedy strategies</small></div>
+              <div class="arch-box">SimulationContext<small>timeline · decisions · metrics</small></div>
+            </div>
+            <span class="arch-arrow" aria-hidden="true"></span>
+            <div class="arch-col">
+              <span class="arch-tag mono">outputs</span>
+              <div class="arch-box">CLI<small>original trace / stats format</small></div>
+              <div class="arch-box">JSON + benchmark<small>--json · --benchmark N</small></div>
+              <div class="arch-box accent">WebAssembly<small>Emscripten → this page</small></div>
+            </div>
+          </div>
+
+          <div class="how-grid">
+            <div class="panel code-panel">
+              <h3>Adding an algorithm</h3>
+<pre class="code"><code><span class="c">// src/algorithms/fcfs.cpp</span>
+<span class="k">class</span> FirstComeFirstServed <span class="k">final</span> : <span class="k">public</span> Scheduler {
+  AlgorithmInfo info() <span class="k">const override</span>;
+  <span class="k">void</span> schedule(SimulationContext&amp; ctx, <span class="k">int</span>) <span class="k">const override</span> {
+    <span class="k">for</span> (<span class="k">int</span> p : ctx.arrivalOrder()) {
+      ctx.decide(time, p, <span class="s">"Earliest arrival still waiting"</span>);
+      <span class="c">// run p to completion, then ctx.complete(p, time)</span>
+    }
+  }
+};
+
+<span class="c">// src/registry.cpp — one line to register it</span>
+r.add(<span class="s">"1"</span>, makeFcfs);</code></pre>
+            </div>
+            <div class="panel">
+              <h3>Engineering quality</h3>
+              <ul class="checklist">
+                <li><strong>53 automated checks</strong>, including the 22 original lab test cases as exact-output regression tests.</li>
+                <li>Clean under <strong>AddressSanitizer + UBSan</strong>; compiled with <code>-Wall -Wextra -Wpedantic</code>, zero warnings.</li>
+                <li><strong>Deterministic benchmarks</strong> — a seed reproduces the same 1,000 workloads on every platform.</li>
+                <li><strong>Backwards compatible</strong> — the original <code>scheduler &lt; input.txt</code> output is unchanged.</li>
+                <li>CMake build, Docker image, and CI that tests the engine and deploys this page on every push.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <p>Designed &amp; built by <a href="https://arpita-devlops.github.io/MyPortfolio/" target="_blank" rel="noopener noreferrer">Arpita Pandey</a></p>
+        <p class="muted mono">C++17 · CMake · Emscripten · Vite · no frameworks</p>
+        <a href="https://github.com/arpita-devlops" target="_blank" rel="noopener noreferrer">GitHub →</a>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
