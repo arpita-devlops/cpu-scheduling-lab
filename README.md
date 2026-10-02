@@ -2,7 +2,7 @@
 
 **Who gets the CPU next?** An interactive lab that answers that question ten different ways, using a modular C++17 scheduling engine that runs natively and in the browser (compiled to WebAssembly).
 
-**Live demo:** https://arpita-devlops.github.io/Greedy-CPU-Scheduling/
+**Live demo:** [https://arpita-devlops.github.io/Greedy-CPU-Scheduling/](https://arpita-devlops.github.io/cpu-scheduling-lab/)
 
 Every CPU scheduler is a greedy algorithm: at each tick it picks the "best" ready process by one local rule. That might be the earliest arrival, the shortest job, the highest response ratio or the highest priority. This project shows how that single choice changes waiting time, response time and fairness.
 
